@@ -5,7 +5,13 @@ CFLAGS = -Wall -Werror -O -std=gnu99 -mcmodel=medany -ffreestanding \
          -nostdlib -fno-common -ggdb -march=rv64gc -fno-stack-protector -fno-pie
 QEMU = qemu-system-riscv64
 
-OBJS = kernel/entry.o kernel/start.o kernel/console.o kernel/printf.o kernel/main.o
+OBJS = \
+	kernel/entry.o \
+	kernel/start.o \
+	kernel/console.o \
+	kernel/printk.o \
+	kernel/uart.o \
+	kernel/main.o
 
 kernel/kernel: $(OBJS) kernel/kernel.ld
 	$(LD) -T kernel/kernel.ld -o $@ $(OBJS)
