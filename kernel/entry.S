@@ -7,10 +7,10 @@
 _entry:
         # set up a stack for C.
         # stack0 is declared in start.c,
-        # with a 1024*LAB1_STACK_KB-byte stack per CPU.
-        # sp = stack0 + ((hartid + 1) * 1024 * LAB1_STACK_KB)
+        # with a 4096-byte stack per CPU.
+        # sp = stack0 + ((hartid + 1) * 4096)
         la sp, stack0
-        li a0, 1024*12  # LAB1_STACK_KB = 12
+        li a0, 1024*4
         csrr a1, mhartid
         addi a1, a1, 1
         mul a0, a0, a1

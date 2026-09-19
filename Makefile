@@ -9,7 +9,7 @@ OBJS = \
 	kernel/entry.o \
 	kernel/start.o \
 	kernel/console.o \
-	kernel/printk.o \
+	kernel/printf.o \
 	kernel/uart.o \
 	kernel/main.o
 

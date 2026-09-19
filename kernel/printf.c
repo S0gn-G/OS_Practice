@@ -6,16 +6,28 @@
 
 #include "types.h"
 #include "param.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 #include "memlayout.h"
 #include "riscv.h"
 #include "defs.h"
+#include "proc.h"
 
 volatile int panicking = 0; // printing a panic message
 volatile int panicked = 0;  // spinning forever at end of a panic
 
+// lock to avoid interleaving concurrent printk's.
+static struct {
+  struct spinlock lock;
+} pr;
+
 static char digits[] = "0123456789abcdef";
 
-static void printint(long long xx, int base, int sign) {
+static void
+printint(long long xx, int base, int sign)
+{
   char buf[20];
   int i;
   unsigned long long x;
@@ -37,7 +49,9 @@ static void printint(long long xx, int base, int sign) {
     consputc(buf[i]);
 }
 
-static void printptr(uint64 x) {
+static void
+printptr(uint64 x)
+{
   int i;
   consputc('0');
   consputc('x');
@@ -46,13 +60,15 @@ static void printptr(uint64 x) {
 }
 
 // Print to the console.
-int printk(char *fmt, ...) {
+int
+printk(char *fmt, ...)
+{
   va_list ap;
   int i, cx, c0, c1, c2;
   char *s;
 
   if (panicking == 0)
-    // acquire(&pr.lock);
+    acquire(&pr.lock);
 
   va_start(ap, fmt);
   for (i = 0; (cx = fmt[i] & 0xff) != 0; i++) {
@@ -112,12 +128,25 @@ int printk(char *fmt, ...) {
   }
   va_end(ap);
 
-  // if (panicking == 0)
-    // release(&pr.lock);
+  if (panicking == 0)
+    release(&pr.lock);
 
   return 0;
 }
 
-void printkinit(void) {
-  // initlock(&pr.lock, "pr");
+void
+panic(char *s)
+{
+  panicking = 1;
+  printk("panic: ");
+  printk("%s\n", s);
+  panicked = 1; // freeze uart output from other CPUs
+  for (;;)
+    ;
+}
+
+void
+printkinit(void)
+{
+  initlock(&pr.lock, "pr");
 }
