@@ -1,2 +1,4 @@
 *.o
 kernel/kernel
+tests/kernel_output.txt
+int.log

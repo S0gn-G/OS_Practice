@@ -10,8 +10,14 @@ OBJS = \
 	kernel/start.o \
 	kernel/console.o \
 	kernel/printf.o \
-	kernel/uart.o \
 	kernel/main.o
+
+# lab1 自测: make LAB1_SELFTEST=1 时把 kernel/selftest.c 一并链入,
+# 内核只跑边界用例、不输出 Banner(便于与 tests/expect_selftest.txt 比对)。
+ifdef LAB1_SELFTEST
+CFLAGS += -DLAB1_SELFTEST
+OBJS   += kernel/selftest.o
+endif
 
 kernel/kernel: $(OBJS) kernel/kernel.ld
 	$(LD) -T kernel/kernel.ld -o $@ $(OBJS)

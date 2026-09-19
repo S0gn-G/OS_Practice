@@ -1,152 +1,181 @@
 //
-// formatted console output -- printk, panic.
+// lab1 阶段四: 最小 printf 格式化输出。
+// 本层只负责"解析格式串 -> 字符流", 真正的字符发送交给下层 consputc(),
+// 保持 printf -> consputc -> uartputc_sync 的分层结构。
 //
-
+// 支持: %d(有符号十进制) %s(字符串) %x(小写十六进制, 带小写 0x 前缀、无前导零)
+//       %%(字面百分号), 以及 %c / %u / %p / %ld / %lu / %lx。
+//
 #include <stdarg.h>
 
 #include "types.h"
 #include "param.h"
-#include "spinlock.h"
-#include "sleeplock.h"
-#include "fs.h"
-#include "file.h"
 #include "memlayout.h"
 #include "riscv.h"
 #include "defs.h"
-#include "proc.h"
-
-volatile int panicking = 0; // printing a panic message
-volatile int panicked = 0;  // spinning forever at end of a panic
-
-// lock to avoid interleaving concurrent printk's.
-static struct {
-  struct spinlock lock;
-} pr;
 
 static char digits[] = "0123456789abcdef";
 
-static void
-printint(long long xx, int base, int sign)
+//
+// 除基取余法把无符号数转成文本: 先得到低位到高位, 再逆序写入 buf,
+// 返回写出的字节数(不含结尾 '\0')。fmtuint 是格式化层与上层
+// (main.c 的 Banner)共用的唯一一份数值转换实现。
+//
+int
+fmtuint(uint64 x, int base, char *buf)
 {
-  char buf[20];
-  int i;
-  unsigned long long x;
+  char tmp[24];
+  int k = 0;
+  int n = 0;
 
-  if (sign && (sign = (xx < 0)))
-    x = -xx;
-  else
-    x = xx;
-
-  i = 0;
   do {
-    buf[i++] = digits[x % base];
+    tmp[k++] = digits[x % base];
   } while ((x /= base) != 0);
 
-  if (sign)
-    buf[i++] = '-';
+  // tmp 中是逆序的低位->高位, 逆序搬回 buf。
+  while (k > 0)
+    buf[n++] = tmp[--k];
 
-  while (--i >= 0)
-    consputc(buf[i]);
+  buf[n] = '\0';
+  return n;
 }
 
-static void
-printptr(uint64 x)
+//
+// 打印一个整数并返回写出的字符数。sign 为真时按有符号数处理。
+//
+static int
+printint(uint64 x, int base, int sign)
 {
-  int i;
-  consputc('0');
-  consputc('x');
-  for (i = 0; i < (sizeof(uint64) * 2); i++, x <<= 4)
-    consputc(digits[x >> (sizeof(uint64) * 8 - 4)]);
+  char buf[24];
+  int n, k, i;
+
+  if (sign && (int64)x < 0) {
+    consputc('-');
+    k = 1;
+    // 取绝对值用无符号运算完成, 避免 -INT64_MIN 的有符号溢出(UB)。
+    x = (uint64)0 - x;
+  } else {
+    k = 0;
+  }
+
+  n = fmtuint(x, base, buf);
+  for (i = 0; i < n; i++)
+    consputc(buf[i] & 0xff);
+
+  return n + k;
 }
 
-// Print to the console.
+//
+// 输出一个字符串。
+//
+static int
+printstr(char *s)
+{
+  int n = 0;
+
+  if (s == 0)
+    s = "(null)";
+  for (; *s; s++) {
+    consputc(*s & 0xff);
+    n++;
+  }
+  return n;
+}
+
+//
+// 格式化输出到控制台, 返回实际写出的字符数。
+//
 int
-printk(char *fmt, ...)
+printf(char *fmt, ...)
 {
   va_list ap;
-  int i, cx, c0, c1, c2;
-  char *s;
-
-  if (panicking == 0)
-    acquire(&pr.lock);
+  int i, n = 0;
 
   va_start(ap, fmt);
-  for (i = 0; (cx = fmt[i] & 0xff) != 0; i++) {
-    if (cx != '%') {
-      consputc(cx);
+  for (i = 0; fmt[i] != '\0'; i++) {
+    if (fmt[i] != '%') {
+      consputc(fmt[i] & 0xff);
+      n++;
       continue;
     }
+
     i++;
-    c0 = fmt[i + 0] & 0xff;
-    c1 = c2 = 0;
-    if (c0)
-      c1 = fmt[i + 1] & 0xff;
-    if (c1)
-      c2 = fmt[i + 2] & 0xff;
-    if (c0 == 'd') {
-      printint(va_arg(ap, int), 10, 1);
-    } else if (c0 == 'l' && c1 == 'd') {
-      printint(va_arg(ap, uint64), 10, 1);
-      i += 1;
-    } else if (c0 == 'l' && c1 == 'l' && c2 == 'd') {
-      printint(va_arg(ap, uint64), 10, 1);
-      i += 2;
-    } else if (c0 == 'u') {
-      printint(va_arg(ap, uint32), 10, 0);
-    } else if (c0 == 'l' && c1 == 'u') {
-      printint(va_arg(ap, uint64), 10, 0);
-      i += 1;
-    } else if (c0 == 'l' && c1 == 'l' && c2 == 'u') {
-      printint(va_arg(ap, uint64), 10, 0);
-      i += 2;
-    } else if (c0 == 'x') {
-      printint(va_arg(ap, uint32), 16, 0);
-    } else if (c0 == 'l' && c1 == 'x') {
-      printint(va_arg(ap, uint64), 16, 0);
-      i += 1;
-    } else if (c0 == 'l' && c1 == 'l' && c2 == 'x') {
-      printint(va_arg(ap, uint64), 16, 0);
-      i += 2;
-    } else if (c0 == 'p') {
-      printptr(va_arg(ap, uint64));
-    } else if (c0 == 'c') {
-      consputc(va_arg(ap, uint));
-    } else if (c0 == 's') {
-      if ((s = va_arg(ap, char *)) == 0)
-        s = "(null)";
-      for (; *s; s++)
-        consputc(*s);
-    } else if (c0 == '%') {
-      consputc('%');
-    } else if (c0 == 0) {
+    switch (fmt[i]) {
+    case 'd':
+      // va_arg(ap, int) 取到 32 位实参, 先符号扩展到 64 位再打印。
+      n += printint((uint64)(int64)va_arg(ap, int), 10, 1);
       break;
-    } else {
-      // Print unknown % sequence to draw attention.
+    case 'u':
+      n += printint((uint64)va_arg(ap, uint32), 10, 0);
+      break;
+    case 'x':
+      // 十六进制统一带小写 0x 前缀、无前导零。
+      consputc('0');
+      consputc('x');
+      n += 2;
+      n += printint((uint64)va_arg(ap, uint32), 16, 0);
+      break;
+    case 'p':
+      consputc('0');
+      consputc('x');
+      n += 2;
+      n += printint(va_arg(ap, uint64), 16, 0);
+      break;
+    case 'l':
+      // 长整型修饰: %ld / %lu / %lx
+      i++;
+      if (fmt[i] == 'd') {
+        n += printint(va_arg(ap, uint64), 10, 1);
+      } else if (fmt[i] == 'u') {
+        n += printint(va_arg(ap, uint64), 10, 0);
+      } else if (fmt[i] == 'x') {
+        consputc('0');
+        consputc('x');
+        n += 2;
+        n += printint(va_arg(ap, uint64), 16, 0);
+      } else {
+        consputc('%');
+        consputc('l');
+        if (fmt[i] != '\0')
+          consputc(fmt[i] & 0xff);
+        n += 3;
+      }
+      break;
+    case 'c':
+      consputc(va_arg(ap, int) & 0xff);
+      n++;
+      break;
+    case 's':
+      n += printstr(va_arg(ap, char *));
+      break;
+    case '%':
       consputc('%');
-      consputc(c0);
+      n++;
+      break;
+    case '\0':
+      // 格式串以孤立 '%' 结尾: 结束解析。
+      goto done;
+    default:
+      // 未知占位符: 原样输出, 便于发现格式错误。
+      consputc('%');
+      consputc(fmt[i] & 0xff);
+      n += 2;
+      break;
     }
   }
+
+done:
   va_end(ap);
-
-  if (panicking == 0)
-    release(&pr.lock);
-
-  return 0;
+  return n;
 }
 
+//
+// 不可恢复的内核错误: 打印信息后停住。
+//
 void
 panic(char *s)
 {
-  panicking = 1;
-  printk("panic: ");
-  printk("%s\n", s);
-  panicked = 1; // freeze uart output from other CPUs
+  printf("panic: %s\n", s);
   for (;;)
     ;
-}
-
-void
-printkinit(void)
-{
-  initlock(&pr.lock, "pr");
 }
