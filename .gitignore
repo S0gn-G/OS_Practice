@@ -1,4 +1,5 @@
 *.o
 kernel/kernel
-tests/kernel_output.txt
-int.log
+kernel/userimg.S
+user/usys.S
+user-flat/

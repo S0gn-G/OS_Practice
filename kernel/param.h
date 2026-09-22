@@ -1,6 +1,14 @@
-// lab1 内核参数。
-// 本实验只保留当前阶段真正会用到的常量; 进程/文件系统等参数
-// (NPROC、NOFILE、FSSIZE 等)属于后续实验内容, 届时随增量包引入。
-
-#define NCPU      8 // 最大 CPU 核数, 每核一个启动栈
-#define BOOT_HART 0 // 引导核编号, 其余从核在 entry.S 中挂起
+#define NPROC       64                // maximum number of processes
+#define NCPU        8                 // maximum number of CPUs
+#define NOFILE      16                // open files per process
+#define NFILE       100               // open files per system
+#define NINODE      50                // maximum number of active i-nodes
+#define NDEV        10                // maximum major device number
+#define ROOTDEV     1                 // device number of file system root disk
+#define MAXARG      32                // max exec arguments
+#define MAXOPBLOCKS 10                // max # of blocks any FS op writes
+#define LOGBLOCKS   (MAXOPBLOCKS * 3) // max data blocks in on-disk log
+#define NBUF        (MAXOPBLOCKS * 3) // size of disk block cache
+#define FSSIZE      2000              // size of file system in blocks
+#define MAXPATH     128               // maximum file path name
+#define USERSTACK   1                 // user stack pages
