@@ -11,17 +11,24 @@ OBJS = \
 	$K/entry.o \
 	$K/start.o \
 	$K/console.o \
-	$K/printf.o \
+	$K/printk.o \
+	$K/uart.o \
 	$K/main.o \
+	$K/proc.o \
+	$K/trampoline.o \
+	$K/trap.o \
+	$K/syscall.o \
+	$K/kernelvec.o \
+	$K/plic.o \
 	$K/userimg.o
 
 $K/kernel: $(OBJS) $K/kernel.ld
 	$(LD) -T $K/kernel.ld -o $@ $(OBJS)
 
-$K/%.o: %.c $K/riscv.h $K/course_sid.h
+$K/%.o: $K/%.c $K/riscv.h $K/course_sid.h
 	$(CC) $(CFLAGS) -Ikernel -c -o $@ $<
 
-$K/%.o: %.S
+$K/%.o: $K/%.S
 	$(CC) $(CFLAGS) -Ikernel -c -o $@ $<
 
 # 验收环境固定(排雷环节禁止改动本行以下内容)

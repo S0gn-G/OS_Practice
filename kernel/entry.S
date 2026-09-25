@@ -5,7 +5,6 @@
 # qemu -kernel 把内核加载到 0x80000000, 并让每个 hart(CPU)都从 _entry 开始执行。
 # kernel.ld 保证 _entry 恰好落在 0x80000000。
 
-#include "param.h"       // NCPU / BOOT_HART
 #include "course_sid.h"  // LAB1_STACK_KB(个性化栈大小)
 
 .section .text
@@ -16,7 +15,7 @@ _entry:
 
         # 读取 hartid, 只有主核(BOOT_HART)继续引导, 其余从核进入 wfi 自旋等待。
         csrr t0, mhartid
-        li t1, BOOT_HART
+        li t1, 0
         bne t0, t1, park
 
         # 为 C 语言配置初始栈:

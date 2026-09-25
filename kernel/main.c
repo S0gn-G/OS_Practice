@@ -10,13 +10,13 @@
 #include "course_sid.h"
 #include "defs.h"
 
+static char digits[] = "0123456789abcdef";
+
 //
 // 输出一行文本, 并返回该行所有字节的 ASCII 码累加和(32 位回绕)。
 // 输出与统计在同一遍循环里完成, 因此校验和必然与实跑输出逐字节一致。
 //
-static uint32
-emitline(char *s)
-{
+static uint32 emitline(char *s) {
   uint32 chk = 0;
 
   for (; *s != '\0'; s++) {
@@ -28,12 +28,32 @@ emitline(char *s)
 }
 
 //
-// 生成协议 0 的正文到 buf(含行尾换行), 返回字节数。
-// 数值部分调用 fmtuint, 与 printf 的 %d / %x 使用同一份转换实现。
+// 除基取余法把无符号数转成文本: 先得到低位到高位, 再逆序写入 buf,
+// 返回写出的字节数(不含结尾 '\0')。fmtuint 是格式化层与上层
+// (main.c 的 Banner)共用的唯一一份数值转换实现。
 //
-static int
-buildbanner(char *buf, int cap)
-{
+int fmtuint(uint64 x, int base, char *buf) {
+  char tmp[24];
+  int k = 0;
+  int n = 0;
+
+  do {
+    tmp[k++] = digits[x % base];
+  } while ((x /= base) != 0);
+
+  // tmp 中是逆序的低位->高位, 逆序搬回 buf。
+  while (k > 0)
+    buf[n++] = tmp[--k];
+
+  buf[n] = '\0';
+  return n;
+}
+
+//
+// 生成协议 0 的正文到 buf(含行尾换行), 返回字节数。
+// 数值部分调用 fmtuint, 与 printk 的 %d / %x 使用同一份转换实现。
+//
+static int buildbanner(char *buf, int cap) {
   int n = 0;
   char *p;
   char num[24];
@@ -71,9 +91,7 @@ buildbanner(char *buf, int cap)
 //   协议 1: 在协议 0 基础上, 每个字节(含行尾换行)后紧跟一个 '.';
 //   协议 2: 在协议 0 基础上, 换行后追加一行 [chk=校验和](校验和为最后输出)。
 //
-static void
-banner(void)
-{
+static void banner(void) {
   char line[64];
   uint32 chk;
   int n, i;
@@ -84,38 +102,34 @@ banner(void)
   case 1:
     // 逐字节输出, 每个字节(含行尾 '\n')后紧跟一个 '.'。
     for (i = 0; i < n; i++) {
-      printf("%c", line[i]);
-      printf(".");
+      printk("%c", line[i]);
+      printk(".");
     }
     break;
 
   case 2:
     // 输出正文(ASCII 累加和/32 位回绕), 换行后回显校验和。
     chk = emitline(line);
-    printf("[chk=%d]\n", chk);
+    printk("[chk=%d]\n", chk);
     break;
 
   default:
     // 协议 0: 直接输出正文本行。
-    printf("%s", line);
+    printk("%s", line);
     break;
   }
 }
 
 // start() 通过 mret 降级到 S 态后跳转到这里。
-void
-main()
-{
+void main() {
   consoleinit();
-
-#ifdef LAB1_SELFTEST
-  // lab1 自测(默认关闭): make LAB1_SELFTEST=1 时打开, 见 kernel/selftest.c。
-  // 打开后只跑用例、不再输出 Banner, 以免干扰逐字节比对。
-  if (selftest())
-    return;
-#endif
+  printkinit();
 
   banner();
+
+  procinit();         // process table
+  trapinit();         // trap vectors
+  plicinit();         // set up interrupt controller
 
   // 本阶段还没有进程与调度器, 也不开启中断: 输出完成后停在这里等待。
   for (;;)
