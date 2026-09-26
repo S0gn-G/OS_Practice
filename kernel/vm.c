@@ -1,6 +1,7 @@
 #include "types.h"
 #include "memlayout.h"
 #include "riscv.h"
+#include "defs.h"
 
 /*
  * the kernel's page table.

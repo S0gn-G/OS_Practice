@@ -5,6 +5,7 @@
 #include "types.h"
 #include "memlayout.h"
 #include "riscv.h"
+#include "defs.h"
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.

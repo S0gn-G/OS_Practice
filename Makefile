@@ -13,7 +13,10 @@ OBJS = \
 	$K/console.o \
 	$K/printk.o \
 	$K/uart.o \
+	$K/kalloc.o \
+	$K/string.o \
 	$K/main.o \
+	$K/vm.o \
 	$K/proc.o \
 	$K/trampoline.o \
 	$K/trap.o \
