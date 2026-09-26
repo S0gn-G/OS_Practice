@@ -57,6 +57,18 @@ void kvminit(void) {
   kernel_pagetable = kvmmake();
 }
 
+// Switch the current CPU's h/w page table register to
+// the kernel's page table, and enable paging.
+void kvminithart() {
+  // wait for any previous writes to the page table memory to finish.
+  sfence_vma();
+
+  w_satp(MAKE_SATP(kernel_pagetable));
+
+  // flush stale entries from the TLB.
+  sfence_vma();
+}
+
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa.
 // va and size MUST be page-aligned.

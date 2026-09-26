@@ -129,9 +129,12 @@ void main() {
 
   kinit();            // physical page allocator
   kvminit();          // create kernel page table
+  kvminithart();      // turn on paging
   procinit();         // process table
   trapinit();         // trap vectors
+  trapinithart();     // install kernel trap vector
   plicinit();         // set up interrupt controller
+  plicinithart();     // ask PLIC for device interrupts
 
   // 本阶段还没有进程与调度器, 也不开启中断: 输出完成后停在这里等待。
   for (;;)
