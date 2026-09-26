@@ -1,7 +1,3 @@
-/* ============ 预置支撑代码 · 请勿修改 ============
- * 说明: RISC-V CSR 名与读写指令(环境事实)
- * 修改该支撑代码可能破坏统一接口规范；若遇到问题建议通过 git diff 核对本段代码。
- * ======================================== */
 #ifndef __ASSEMBLER__
 
 // which hart (core) is this?
@@ -386,7 +382,7 @@ icache_fence()
 }
 
 typedef uint64 pte_t;
-typedef uint64 *pagetable_t; // 512 PTEs
+typedef uint64* pagetable_t; // 512 PTEs
 
 #endif // __ASSEMBLER__
 
@@ -399,7 +395,7 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PTE_V (1L << 0) // valid
 #define PTE_R (1L << 1)
 #define PTE_W (1L << 2)
-#define PTE_X (1L << 3)
+#define PTE_X (1L << 3) // execute
 #define PTE_U (1L << 4) // user can access
 
 // shift a physical address to the right place for a PTE.

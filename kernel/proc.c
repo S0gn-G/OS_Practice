@@ -9,9 +9,24 @@ struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
 
+// Allocate a page for each process's kernel stack.
+// Map it high in memory, followed by an invalid
+// guard page.
+void proc_mapstacks(pagetable_t kpgtbl) {
+  struct proc* p;
+
+  for (p = proc; p < &proc[NPROC]; p++) {
+    char* pa = kalloc();
+    if (pa == 0)
+      panic("kalloc");
+    uint64 va = KSTACK((int)(p - proc));
+    kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  }
+}
+
 // initialize the proc table.
 void procinit(void) {
-  struct proc *p;
+  struct proc* p;
 
   // initlock(&pid_lock, "nextpid");
   // initlock(&wait_lock, "wait_lock");
@@ -34,15 +49,15 @@ int cpuid() {
 // Interrupts must be disabled.
 struct cpu* mycpu(void) {
   int id = cpuid();
-  struct cpu *c = &cpus[id];
+  struct cpu* c = &cpus[id];
   return c;
 }
 
-// Return the current struct proc *, or zero if none.
+// Return the current struct proc*, or zero if none.
 struct proc* myproc(void) {
   // push_off();
-  struct cpu *c = mycpu();
-  struct proc *p = c->proc;
+  struct cpu* c = mycpu();
+  struct proc* p = c->proc;
   // pop_off();
   return p;
 }
@@ -51,7 +66,7 @@ struct proc* myproc(void) {
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
 void procdump(void) {
-  static char *states[] = {
+  static char* states[] = {
     // clang-format off
     [UNUSED]    = "unused",
     [USED]      = "used",
@@ -61,8 +76,8 @@ void procdump(void) {
     [ZOMBIE]    = "zombie"
     // clang-format on
   };
-  struct proc *p;
-  char *state;
+  struct proc* p;
+  char* state;
 
   printk("\n");
   for (p = proc; p < &proc[NPROC]; p++) {

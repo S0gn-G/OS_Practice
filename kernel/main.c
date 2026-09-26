@@ -127,6 +127,8 @@ void main() {
 
   banner();
 
+  kinit();            // physical page allocator
+  kvminit();          // create kernel page table
   procinit();         // process table
   trapinit();         // trap vectors
   plicinit();         // set up interrupt controller

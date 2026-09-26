@@ -81,7 +81,7 @@ uint64 usertrap(void) {
   // since we're now in the kernel.
   w_stvec((uint64)kernelvec); //DOC: kernelvec
 
-  struct proc *p = myproc();
+  struct proc* p = myproc();
 
   // save user program counter.
   p->trapframe->epc = r_sepc();
@@ -133,7 +133,7 @@ uint64 usertrap(void) {
 // set up trapframe and control registers for a return to user space
 //
 void prepare_return(void) {
-  struct proc *p = myproc();
+  struct proc* p = myproc();
 
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(). because a trap from kernel

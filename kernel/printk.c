@@ -46,10 +46,10 @@ static void printptr(uint64 x) {
 }
 
 // Print to the console.
-int printk(char *fmt, ...) {
+int printk(char* fmt, ...) {
   va_list ap;
   int i, cx, c0, c1, c2;
-  char *s;
+  char* s;
 
   // if (panicking == 0)
     // acquire(&pr.lock);
@@ -96,7 +96,7 @@ int printk(char *fmt, ...) {
     } else if (c0 == 'c') {
       consputc(va_arg(ap, uint));
     } else if (c0 == 's') {
-      if ((s = va_arg(ap, char *)) == 0)
+      if ((s = va_arg(ap, char*)) == 0)
         s = "(null)";
       for (; *s; s++)
         consputc(*s);
@@ -118,7 +118,7 @@ int printk(char *fmt, ...) {
   return 0;
 }
 
-void panic(char *s) {
+void panic(char* s) {
   panicking = 1;
   printk("panic: ");
   printk("%s\n", s);

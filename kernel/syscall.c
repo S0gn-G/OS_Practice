@@ -37,7 +37,7 @@ static uint64 (*syscalls[])(void) = {
 
 void syscall(void) {
   int num;
-  struct proc *p = myproc();
+  struct proc* p = myproc();
 
   num = p->trapframe->a7;
   if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
