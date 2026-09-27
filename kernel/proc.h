@@ -1,7 +1,27 @@
+// Saved registers for kernel context switches.
+struct context {
+  uint64 ra;
+  uint64 sp;
+
+  // callee-saved
+  uint64 s0;
+  uint64 s1;
+  uint64 s2;
+  uint64 s3;
+  uint64 s4;
+  uint64 s5;
+  uint64 s6;
+  uint64 s7;
+  uint64 s8;
+  uint64 s9;
+  uint64 s10;
+  uint64 s11;
+};
+
 // Per-CPU state.
 struct cpu {
   struct proc* proc;      // The process running on this cpu, or null.
-  // struct context context; // swtch() here to enter scheduler().
+  struct context context; // swtch() here to enter scheduler().
   int noff;               // Depth of push_off() nesting.
   int intena;             // Were interrupts enabled before push_off()?
 };
@@ -75,7 +95,7 @@ struct proc {
   uint64 sz;                   // Size of process memory (bytes)
   pagetable_t pagetable;       // User page table
   struct trapframe* trapframe; // data page for trampoline.S
-  // struct context context;      // swtch() here to run process
+  struct context context;      // swtch() here to run process
   // struct file* ofile[NOFILE];  // Open files
   // struct inode* cwd;           // Current directory
   char name[16];               // Process name (debugging)

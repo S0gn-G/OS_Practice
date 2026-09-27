@@ -18,9 +18,11 @@ OBJS = \
 	$K/main.o \
 	$K/vm.o \
 	$K/proc.o \
+	$K/swtch.o \
 	$K/trampoline.o \
 	$K/trap.o \
 	$K/syscall.o \
+	$K/exec.o \
 	$K/kernelvec.o \
 	$K/plic.o \
 	$K/userimg.o

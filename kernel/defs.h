@@ -6,6 +6,9 @@ void            consoleinit(void);
 void            consoleintr(int);
 void            consputc(int);
 
+// exec.c
+int             kexec(char*, char**);
+
 // kalloc.c
 void*           kalloc(void);
 void            kfree(void*);
@@ -18,28 +21,34 @@ int             plic_claim(void);
 void            plic_complete(int);
 
 // printk.c
-int             printk(char*, ...) __attribute__ ((format (printf, 1, 2)));
 void            panic(char*) __attribute__((noreturn));
+int             printk(char*, ...) __attribute__ ((format (printf, 1, 2)));
 void            printkinit(void);
 
 // proc.c
 int             cpuid(void);
-void            proc_mapstacks(pagetable_t);
 struct cpu*     mycpu(void);
 struct proc*    myproc();
-void            procinit(void);
 void            procdump(void);
+void            procinit(void);
+void            proc_freepagetable(pagetable_t, uint64);
+void            proc_mapstacks(pagetable_t);
+pagetable_t     proc_pagetable(struct proc*);
+void            scheduler(void) __attribute__((noreturn));
+void            userinit(void);
 
 // string.c
+void*           memmove(void*, const void*, uint);
 void*           memset(void*, int, uint);
+char*           safestrcpy(char*, const char*, int);
 
 // syscall.c
 void            syscall();
 
 // trap.c
+void            prepare_return(void);
 void            trapinit(void);
 void            trapinithart(void);
-void            prepare_return(void);
 
 // uart.c
 void            uartinit(void);
@@ -47,8 +56,18 @@ void            uartintr(void);
 void            uartputc_sync(int);
 
 // vm.c
+int             copyout(pagetable_t, uint64, uint64, char*, uint64);
+int             ismapped(pagetable_t, uint64);
 void            kvminit(void);
 void            kvminithart(void);
 void            kvmmap(pagetable_t, uint64, uint64, uint64, int);
 int             mappages(pagetable_t, uint64, uint64, uint64, int);
+uint64          uvmalloc(pagetable_t, uint64, uint64, int);
+void            uvmclear(pagetable_t, uint64);
+pagetable_t     uvmcreate(void);
+uint64          uvmdealloc(pagetable_t, uint64, uint64);
+void            uvmfree(pagetable_t, uint64);
+void            uvmunmap(pagetable_t, uint64, uint64, int);
+uint64          vmfault(pagetable_t, uint64, uint64, int);
 pte_t*          walk(pagetable_t, uint64, int);
+uint64          walkaddr(pagetable_t, uint64);

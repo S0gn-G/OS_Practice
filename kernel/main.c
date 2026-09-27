@@ -1,8 +1,3 @@
-//
-// lab1 阶段三/四: S 态内核主入口。
-// 由 start() 通过 mret 跳转到这里执行, 是内核核心的第一段 C 代码。
-// 目标: 在控制台上按学号个性化协议输出启动 Banner。
-//
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -120,7 +115,7 @@ static void banner(void) {
   }
 }
 
-// start() 通过 mret 降级到 S 态后跳转到这里。
+// start() jumps here in supervisor mode on all CPUs.
 void main() {
   consoleinit();
   printkinit();
@@ -135,8 +130,7 @@ void main() {
   trapinithart();     // install kernel trap vector
   plicinit();         // set up interrupt controller
   plicinithart();     // ask PLIC for device interrupts
+  userinit();         // first user process
 
-  // 本阶段还没有进程与调度器, 也不开启中断: 输出完成后停在这里等待。
-  for (;;)
-    asm volatile("wfi");
+  scheduler();
 }
