@@ -1,6 +1,9 @@
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x) / sizeof((x)[0]))
 
+// clang-format off
+struct context;
+
 // console.c
 void            consoleinit(void);
 void            consoleintr(int);
