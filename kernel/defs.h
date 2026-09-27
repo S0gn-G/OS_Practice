@@ -7,6 +7,8 @@ struct context;
 // console.c
 void            consoleinit(void);
 void            consoleintr(int);
+int             consoleread(uint64, int);
+int             consolewrite(uint64, int);
 void            consputc(int);
 
 // exec.c
@@ -30,6 +32,8 @@ void            printkinit(void);
 
 // proc.c
 int             cpuid(void);
+int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
+int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 void            kexit(int);
 int             kfork(void);
 int             killed(struct proc*);
@@ -60,6 +64,8 @@ void            swtch(struct context*, struct context*);
 // syscall.c
 void            argint(int, int*);
 void            argaddr(int, uint64*);
+int             argstr(int, char*, int);
+int             fetchstr(uint64, char*, int);
 void            syscall();
 
 // trap.c
@@ -71,8 +77,11 @@ void            trapinithart(void);
 void            uartinit(void);
 void            uartintr(void);
 void            uartputc_sync(int);
+void            uartwrite(char [], int);
 
 // vm.c
+int             copyin(pagetable_t, uint64, char *, uint64, uint64);
+int             copyinstr(pagetable_t, uint64, char *, uint64, uint64);
 int             copyout(pagetable_t, uint64, uint64, char*, uint64);
 int             ismapped(pagetable_t, uint64);
 void            kvminit(void);

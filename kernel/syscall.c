@@ -6,6 +6,15 @@
 #include "syscall.h"
 #include "defs.h"
 
+// Fetch the nul-terminated string at addr from the current process.
+// Returns length of string, not including nul, or -1 for error.
+int fetchstr(uint64 addr, char* buf, int max) {
+  struct proc* p = myproc();
+  if (copyinstr(p->pagetable, p->sz, buf, addr, max) < 0)
+    return -1;
+  return strlen(buf);
+}
+
 static uint64 argraw(int n) {
   struct proc *p = myproc();
   switch (n) {
@@ -36,6 +45,15 @@ void argint(int n, int* ip) {
 // copyin/copyout will do that.
 void argaddr(int n, uint64* ip) {
   *ip = argraw(n);
+}
+
+// Fetch the nth word-sized system call argument as a null-terminated string.
+// Copies into buf, at most max.
+// Returns string length if OK (not including nul), -1 if error.
+int argstr(int n, char *buf, int max) {
+  uint64 addr;
+  argaddr(n, &addr);
+  return fetchstr(addr, buf, max);
 }
 
 // Prototypes for the functions that handle system calls.

@@ -37,7 +37,7 @@
 
 // for sending threads to serialize their writes
 // static struct sleeplock tx_lock;
-// static int tx_chan; // &tx_chan is the "wait channel"
+static int tx_chan; // &tx_chan is the "wait channel"
 
 extern volatile int panicking; // from printk.c
 extern volatile int panicked;  // from printk.c
@@ -63,9 +63,29 @@ void uartinit(void) {
   WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
 
   // enable transmit and receive interrupts.
-  // WriteReg(IER, IER_TX_ENABLE | IER_RX_ENABLE);
+  WriteReg(IER, IER_TX_ENABLE | IER_RX_ENABLE);
 
   // initsleeplock(&tx_lock, "uart");
+}
+
+// transmit buf[] to the uart. it blocks if the
+// uart is busy, so it cannot be called from
+// interrupts, only from write() system calls.
+void uartwrite(char buf[], int n) {
+  // acquiresleep(&tx_lock);
+
+  int i = 0;
+  while (i < n) {
+    sleep_prepare(&tx_chan);
+    if (ReadReg(LSR) & LSR_TX_IDLE) {
+      WriteReg(THR, buf[i]);
+      i += 1;
+    } else {
+      sleep();
+    }
+  }
+
+  // releasesleep(&tx_lock);
 }
 
 // write a byte to the uart without using

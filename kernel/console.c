@@ -49,6 +49,84 @@ struct {
 } cons;
 
 //
+// user write() system calls to the console go here.
+// uses sleep() and UART interrupts.
+//
+int consolewrite(int user_src, uint64 src, int n) {
+  char buf[32]; // move batches from user space to uart.
+  int i = 0;
+
+  while (i < n) {
+    int nn = sizeof(buf);
+    if (nn > n - i)
+      nn = n - i;
+    if (either_copyin(buf, user_src, src + i, nn) == -1)
+      break;
+    uartwrite(buf, nn);
+    i += nn;
+  }
+
+  return i;
+}
+
+//
+// user read()s from the console go here.
+// copy (up to) a whole input line to dst.
+// user_dst indicates whether dst is a user
+// or kernel address.
+//
+int consoleread(int user_dst, uint64 dst, int n) {
+  uint target;
+  int c;
+  char cbuf;
+
+  target = n;
+  // acquire(&cons.lock);
+  while (n > 0) {
+    // wait until interrupt handler has put some
+    // input into cons.buffer.
+    while (cons.r == cons.w) {
+      if (killed(myproc())) {
+        // release(&cons.lock);
+        return -1;
+      }
+      sleep_prepare(&cons.r);
+      // release(&cons.lock);
+      sleep();
+      // acquire(&cons.lock);
+    }
+
+    c = cons.buf[cons.r++ % INPUT_BUF_SIZE];
+
+    if (c == C('D')) { // end-of-file
+      if (n < target) {
+        // Save ^D for next time, to make sure
+        // caller gets a 0-byte result.
+        cons.r--;
+      }
+      break;
+    }
+
+    // copy the input byte to the user-space buffer.
+    cbuf = c;
+    if (either_copyout(user_dst, dst, &cbuf, 1) == -1)
+      break;
+
+    dst++;
+    --n;
+
+    if (c == '\n') {
+      // a whole line has arrived, return to
+      // the user-level read().
+      break;
+    }
+  }
+  // release(&cons.lock);
+
+  return target - n;
+}
+
+//
 // the console input interrupt handler.
 // uartintr() calls this for each input character.
 // do erase/kill processing, append to cons.buf,
@@ -62,8 +140,7 @@ void consoleintr(int c) {
     procdump();
     break;
   case C('U'): // Kill line.
-    while (cons.e != cons.w &&
-           cons.buf[(cons.e - 1) % INPUT_BUF_SIZE] != '\n') {
+    while (cons.e != cons.w && cons.buf[(cons.e - 1) % INPUT_BUF_SIZE] != '\n') {
       cons.e--;
       consputc(BACKSPACE);
     }
@@ -89,7 +166,7 @@ void consoleintr(int c) {
         // wake up consoleread() if a whole line (or end-of-file)
         // has arrived.
         cons.w = cons.e;
-        // wakeup(&cons.r);
+        wakeup(&cons.r);
       }
     }
     break;
