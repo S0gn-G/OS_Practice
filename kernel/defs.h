@@ -3,12 +3,13 @@
 
 // clang-format off
 struct context;
+struct proc;
 
 // console.c
 void            consoleinit(void);
 void            consoleintr(int);
-int             consoleread(uint64, int);
-int             consolewrite(uint64, int);
+int             consoleread(int user_dst, uint64 dst, int n);
+int             consolewrite(int user_src, uint64 src, int n);
 void            consputc(int);
 
 // exec.c

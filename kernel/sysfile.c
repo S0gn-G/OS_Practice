@@ -41,7 +41,9 @@ uint64 sys_read(void) {
   if (fd != CONSOLE_IN)
     return -1;
 
-  return consoleread(buf, n);
+  // console.c 的定义是 consoleread(int user_dst, uint64 dst, int n):
+  // 首参标记 dst 是用户空间地址, 由 either_copyout() 转 copyout。
+  return consoleread(1, buf, n);
 }
 
 //
@@ -58,7 +60,9 @@ uint64 sys_write(void) {
   if (fd != CONSOLE_OUT && fd != CONSOLE_ERR)
     return -1;
 
-  return consolewrite(buf, n);
+  // console.c 的定义是 consolewrite(int user_src, uint64 src, int n):
+  // 首参标记 src 是用户空间地址, 由 either_copyin() 转 copyin。
+  return consolewrite(1, buf, n);
 }
 
 //
