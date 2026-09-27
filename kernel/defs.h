@@ -41,6 +41,10 @@ void            userinit(void);
 void*           memmove(void*, const void*, uint);
 void*           memset(void*, int, uint);
 char*           safestrcpy(char*, const char*, int);
+int             strlen(const char*);
+
+// swtch.S
+void            swtch(struct context*, struct context*);
 
 // syscall.c
 void            syscall();
