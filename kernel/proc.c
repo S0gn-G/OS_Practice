@@ -36,7 +36,9 @@ void forkret(void) {
 
     // We can invoke kexec() now that file system is initialized.
     // Put the return value (argc) of kexec into a0.
-    p->trapframe->a0 = kexec("/init", (char*[]){"/init", 0});
+    // lab2: 还没有文件系统，kexec 改成从内嵌程序表 _uprog_table 里
+    // 按名字装载；第一个用户程序是 sh(表内名字没有前导 '/')。
+    p->trapframe->a0 = kexec("sh", 0);
     if (p->trapframe->a0 == -1) {
       panic("exec");
     }
@@ -229,6 +231,161 @@ void userinit(void) {
   // release(&p->lock);
 }
 
+// Create a new process, copying the parent.
+// Sets up child kernel stack to return as if from fork() system call.
+int kfork(void) {
+  int i, pid;
+  struct proc* np;
+  struct proc* p = myproc();
+
+  // Allocate process.
+  if ((np = allocproc()) == 0) {
+    return -1;
+  }
+
+  // Copy user memory from parent to child.
+  if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0) {
+    freeproc(np);
+    // release(&np->lock);
+    return -1;
+  }
+  np->sz = p->sz;
+
+  // copy saved user registers.
+  *(np->trapframe) = *(p->trapframe);
+
+  // Cause fork to return 0 in the child.
+  np->trapframe->a0 = 0;
+
+  // increment reference counts on open file descriptors.
+  // for (i = 0; i < NOFILE; i++)
+    // if (p->ofile[i])
+      // np->ofile[i] = filedup(p->ofile[i]);
+  // np->cwd = idup(p->cwd);
+
+  safestrcpy(np->name, p->name, sizeof(p->name));
+
+  pid = np->pid;
+
+  // release(&np->lock);
+
+  // acquire(&wait_lock);
+  np->parent = p;
+  // release(&wait_lock);
+
+  // acquire(&np->lock);
+  np->state = RUNNABLE;
+  // release(&np->lock);
+
+  return pid;
+}
+
+// Pass p's abandoned children to init.
+// Caller must hold wait_lock.
+void reparent(struct proc *p) {
+  struct proc* pp;
+
+  for (pp = proc; pp < &proc[NPROC]; pp++) {
+    if (pp->parent == p) {
+      pp->parent = initproc;
+      wakeup(initproc);
+    }
+  }
+}
+
+// Exit the current process.  Does not return.
+// An exited process remains in the zombie state
+// until its parent calls wait().
+void kexit(int status) {
+  struct proc* p = myproc();
+
+  if (p == initproc)
+    panic("init exiting");
+
+  // Close all open files.
+  // for (int fd = 0; fd < NOFILE; fd++) {
+    // if (p->ofile[fd]) {
+      // struct file *f = p->ofile[fd];
+      // fileclose(f);
+      // p->ofile[fd] = 0;
+    // }
+  // }
+
+  // begin_op();
+  // iput(p->cwd);
+  // end_op();
+  // p->cwd = 0;
+
+  // acquire(&wait_lock);
+
+  // Give any children to init.
+  reparent(p);
+
+  // Parent might be sleeping in wait().
+  wakeup(p->parent);
+
+  // acquire(&p->lock);
+
+  p->xstate = status;
+  p->state = ZOMBIE;
+
+  // release(&wait_lock);
+
+  // Jump into the scheduler, never to return.
+  sched();
+  panic("zombie exit");
+}
+
+// Wait for a child process to exit and return its pid.
+// Return -1 if this process has no children.
+int kwait(uint64 addr) {
+  struct proc* pp;
+  int havekids, pid;
+  struct proc* p = myproc();
+
+  // acquire(&wait_lock);
+
+  for (;;) {
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for (pp = proc; pp < &proc[NPROC]; pp++) {
+      if (pp->parent == p) {
+        // make sure the child isn't still in exit() or swtch().
+        // acquire(&pp->lock);
+
+        havekids = 1;
+        if (pp->state == ZOMBIE) {
+          // Found one.
+          pid = pp->pid;
+          if (addr != 0 && copyout(p->pagetable, p->sz, addr, (char *)&pp->xstate, sizeof(pp->xstate)) < 0) {
+            // release(&pp->lock);
+            // release(&wait_lock);
+            return -1;
+          }
+          pp->parent = 0;
+          freeproc(pp);
+          // release(&pp->lock);
+          // release(&wait_lock);
+          return pid;
+        }
+        // release(&pp->lock);
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if (!havekids || killed(p)) {
+      // release(&wait_lock);
+      return -1;
+    }
+
+    // Wait for a child to exit.
+    sleep_prepare(p); //DOC: wait-sleep
+    // release(&wait_lock);
+    sleep();
+    // acquire(&wait_lock);
+  }
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -250,7 +407,7 @@ void scheduler(void) {
     intr_on();
     intr_off();
 
-    // int found = 0;
+    int found = 0;
     for (p = proc; p < &proc[NPROC]; p++) {
       // acquire(&p->lock);
       if (p->state == RUNNABLE) {
@@ -266,16 +423,50 @@ void scheduler(void) {
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
-        // c->proc = 0;
-        // found = 1;
+        c->proc = 0;
+        found = 1;
       }
       // release(&p->lock);
     }
-    // if (found == 0) {
+    if (found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");
-    // }
+    }
   }
+}
+
+// Switch to scheduler.  Must hold only p->lock
+// and have changed proc->state. Saves and restores
+// intena because intena is a property of this
+// kernel thread, not this CPU. It should
+// be proc->intena and proc->noff, but that would
+// break in the few places where a lock is held but
+// there's no process.
+void sched(void) {
+  int intena;
+  struct proc* p = myproc();
+
+  // if (!holding(&p->lock))
+    // panic("sched p->lock");
+  // if (mycpu()->noff != 1)
+    // panic("sched locks");
+  if (p->state == RUNNING)
+    panic("sched RUNNING");
+  if (intr_get())
+    panic("sched interruptible");
+
+  // intena = mycpu()->intena;
+  swtch(&p->context, &mycpu()->context);
+  // mycpu()->intena = intena;
+}
+
+int killed(struct proc* p) {
+  int k;
+
+  // acquire(&p->lock);
+  k = p->killed;
+  // release(&p->lock);
+  return k;
 }
 
 // Print a process listing to console.  For debugging.
@@ -305,5 +496,51 @@ void procdump(void) {
       state = "???";
     printk("%d %s %s", p->pid, state, p->name);
     printk("\n");
+  }
+}
+
+// Register current process as waiting for wakeups on chan.
+void sleep_prepare(void *chan) {
+  struct proc* p = myproc();
+
+  // acquire(&p->lock);
+  if (chan == 0)
+    panic("sleep_prepare: zero chan");
+  p->chan = chan;
+  // release(&p->lock);
+}
+
+// Put the thread to sleep.  Assumes sleep_prepare() was called before.
+// If the channel registered by sleep_prepare() has been woken up in
+// the meantime, do not go to sleep, and instead return immediately.
+void sleep(void) {
+  struct proc *p = myproc();
+
+  // acquire(&p->lock);
+  if (p->chan != 0) {
+    p->state = SLEEPING;
+    sched();
+  }
+  // release(&p->lock);
+}
+
+// Wake up all processes sleeping on channel chan.
+void wakeup(void* chan) {
+  struct proc* p;
+
+  for (p = proc; p < &proc[NPROC]; p++) {
+    // acquire(&p->lock);
+    if (p->chan == chan) {
+      // If the process is waiting for wakeups on this channel,
+      // signal that the wakeup happened by clearing p->chan.
+      p->chan = 0;
+
+      // If this waiting process has gotten so far as to actually
+      // go to sleep, also set it back to RUNNING.
+      if (p->state == SLEEPING) {
+        p->state = RUNNABLE;
+      }
+    }
+    // release(&p->lock);
   }
 }
