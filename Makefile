@@ -57,7 +57,7 @@ clean:
 # 用户程序由本规则链编译为平铺二进制,经 userimg.S 内嵌进内核镜像;
 # 你的 sys_exec 从内嵌程序表按名字查找并加载(表格式见下方注释)。
 
-UPROGS = sh hi spin
+UPROGS = sh hi spin badecall bufstorm
 
 OBJCOPY ?= riscv64-unknown-elf-objcopy
 

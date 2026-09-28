@@ -3,7 +3,10 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "proc.h"
+#include "course_sid.h"
 #include "defs.h"
+
+uint ticks;
 
 extern char trampoline[], uservec[];
 
@@ -13,8 +16,8 @@ void kernelvec();
 void clockintr() {
   if (cpuid() == 0) {
     // acquire(&tickslock);
-    // ticks++;
-    // wakeup(&ticks);
+    ticks++;
+    wakeup(&ticks);
     // release(&tickslock);
   }
 
@@ -103,7 +106,7 @@ uint64 usertrap(void) {
 
     // an interrupt will change sepc, scause, and sstatus,
     // so enable only now that we're done with those registers.
-    intr_on();
+    // intr_on();
 
     syscall();
   } else if ((which_dev = devintr()) != 0) {
@@ -121,8 +124,8 @@ uint64 usertrap(void) {
     // kexit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  // if (which_dev == 2)
-    // yield();
+  if (which_dev == 2)
+    yield();
 
   prepare_return();
 
@@ -188,8 +191,8 @@ void kerneltrap() {
   }
 
   // give up the CPU if this is a timer interrupt.
-  // if (which_dev == 2 && myproc() != 0)
-    // yield();
+  if (which_dev == 2 && myproc() != 0)
+    yield();
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.

@@ -16,6 +16,7 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "defs.h"
+#include "course_sid.h"
 
 #define BACKSPACE 0x100       // erase the last output character
 #define C(x)      ((x) - '@') // Control-x
@@ -42,7 +43,7 @@ struct {
 
   // input circular buffer
 #define INPUT_BUF_SIZE 128
-  char buf[INPUT_BUF_SIZE];
+  char buf[LAB2_BUF_SIZE];
   uint r; // Read index
   uint w; // Write index
   uint e; // Edit index
@@ -96,7 +97,7 @@ int consoleread(int user_dst, uint64 dst, int n) {
       // acquire(&cons.lock);
     }
 
-    c = cons.buf[cons.r++ % INPUT_BUF_SIZE];
+    c = cons.buf[cons.r++ % LAB2_BUF_SIZE];
 
     if (c == C('D')) { // end-of-file
       if (n < target) {
@@ -140,7 +141,7 @@ void consoleintr(int c) {
     procdump();
     break;
   case C('U'): // Kill line.
-    while (cons.e != cons.w && cons.buf[(cons.e - 1) % INPUT_BUF_SIZE] != '\n') {
+    while (cons.e != cons.w && cons.buf[(cons.e - 1) % LAB2_BUF_SIZE] != '\n') {
       cons.e--;
       consputc(BACKSPACE);
     }
@@ -153,16 +154,16 @@ void consoleintr(int c) {
     }
     break;
   default:
-    if (c != 0 && cons.e - cons.r < INPUT_BUF_SIZE) {
+    if (c != 0 && cons.e - cons.r < LAB2_BUF_SIZE) {
       c = (c == '\r') ? '\n' : c;
 
       // echo back to the user.
       consputc(c);
 
       // store for consumption by consoleread().
-      cons.buf[cons.e++ % INPUT_BUF_SIZE] = c;
+      cons.buf[cons.e++ % LAB2_BUF_SIZE] = c;
 
-      if (c == '\n' || c == C('D') || cons.e - cons.r == INPUT_BUF_SIZE) {
+      if (c == '\n' || c == C('D') || cons.e - cons.r == LAB2_BUF_SIZE) {
         // wake up consoleread() if a whole line (or end-of-file)
         // has arrived.
         cons.w = cons.e;

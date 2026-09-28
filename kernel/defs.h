@@ -52,6 +52,7 @@ void            sleep(void);
 void            sleep_prepare(void*);
 void            userinit(void);
 void            wakeup(void*);
+void            yield(void);
 
 // string.c
 void*           memmove(void*, const void*, uint);
@@ -70,6 +71,7 @@ int             fetchstr(uint64, char*, int);
 void            syscall();
 
 // trap.c
+extern uint     ticks;
 void            prepare_return(void);
 void            trapinit(void);
 void            trapinithart(void);

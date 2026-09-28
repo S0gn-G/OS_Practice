@@ -129,7 +129,7 @@ void uartintr(void) {
 
   if (ReadReg(LSR) & LSR_TX_IDLE) {
     // UART finished transmitting; wake up sending thread.
-    // wakeup(&tx_chan);
+    wakeup(&tx_chan);
   }
 
   // read and process incoming characters, if any.

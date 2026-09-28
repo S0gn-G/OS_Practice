@@ -460,6 +460,15 @@ void sched(void) {
   // mycpu()->intena = intena;
 }
 
+// Give up the CPU for one scheduling round.
+void yield(void) {
+  struct proc *p = myproc();
+  // acquire(&p->lock);
+  p->state = RUNNABLE;
+  sched();
+  // release(&p->lock);
+}
+
 int killed(struct proc* p) {
   int k;
 
