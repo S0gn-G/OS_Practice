@@ -48,10 +48,7 @@ void            proc_mapstacks(pagetable_t);
 pagetable_t     proc_pagetable(struct proc*);
 void            sched(void);
 void            scheduler(void) __attribute__((noreturn));
-void            sleep(void);
-void            sleep_prepare(void*);
 void            userinit(void);
-void            wakeup(void*);
 void            yield(void);
 
 // string.c

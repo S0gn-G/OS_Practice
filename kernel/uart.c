@@ -37,7 +37,7 @@
 
 // for sending threads to serialize their writes
 // static struct sleeplock tx_lock;
-static int tx_chan; // &tx_chan is the "wait channel"
+// static int tx_chan; // &tx_chan is the "wait channel"
 
 extern volatile int panicking; // from printk.c
 extern volatile int panicked;  // from printk.c
@@ -76,12 +76,12 @@ void uartwrite(char buf[], int n) {
 
   int i = 0;
   while (i < n) {
-    sleep_prepare(&tx_chan);
+    // sleep_prepare(&tx_chan);
     if (ReadReg(LSR) & LSR_TX_IDLE) {
       WriteReg(THR, buf[i]);
       i += 1;
     } else {
-      sleep();
+      // sleep();
     }
   }
 
@@ -129,7 +129,7 @@ void uartintr(void) {
 
   if (ReadReg(LSR) & LSR_TX_IDLE) {
     // UART finished transmitting; wake up sending thread.
-    wakeup(&tx_chan);
+    // wakeup(&tx_chan);
   }
 
   // read and process incoming characters, if any.

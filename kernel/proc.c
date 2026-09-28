@@ -288,7 +288,7 @@ void reparent(struct proc *p) {
   for (pp = proc; pp < &proc[NPROC]; pp++) {
     if (pp->parent == p) {
       pp->parent = initproc;
-      wakeup(initproc);
+      // wakeup(initproc);
     }
   }
 }
@@ -322,7 +322,7 @@ void kexit(int status) {
   reparent(p);
 
   // Parent might be sleeping in wait().
-  wakeup(p->parent);
+  // wakeup(p->parent);
 
   // acquire(&p->lock);
 
@@ -379,9 +379,9 @@ int kwait(uint64 addr) {
     }
 
     // Wait for a child to exit.
-    sleep_prepare(p); //DOC: wait-sleep
+    // sleep_prepare(p); //DOC: wait-sleep
     // release(&wait_lock);
-    sleep();
+    // sleep();
     // acquire(&wait_lock);
   }
 }
@@ -446,6 +446,7 @@ void sched(void) {
   // int intena;
   struct proc* p = myproc();
 
+  intr_off();
   // if (!holding(&p->lock))
     // panic("sched p->lock");
   // if (mycpu()->noff != 1)
@@ -532,51 +533,5 @@ void procdump(void) {
       state = "???";
     printk("%d %s %s", p->pid, state, p->name);
     printk("\n");
-  }
-}
-
-// Register current process as waiting for wakeups on chan.
-void sleep_prepare(void *chan) {
-  struct proc* p = myproc();
-
-  // acquire(&p->lock);
-  if (chan == 0)
-    panic("sleep_prepare: zero chan");
-  p->chan = chan;
-  // release(&p->lock);
-}
-
-// Put the thread to sleep.  Assumes sleep_prepare() was called before.
-// If the channel registered by sleep_prepare() has been woken up in
-// the meantime, do not go to sleep, and instead return immediately.
-void sleep(void) {
-  struct proc *p = myproc();
-
-  // acquire(&p->lock);
-  if (p->chan != 0) {
-    p->state = SLEEPING;
-    sched();
-  }
-  // release(&p->lock);
-}
-
-// Wake up all processes sleeping on channel chan.
-void wakeup(void* chan) {
-  struct proc* p;
-
-  for (p = proc; p < &proc[NPROC]; p++) {
-    // acquire(&p->lock);
-    if (p->chan == chan) {
-      // If the process is waiting for wakeups on this channel,
-      // signal that the wakeup happened by clearing p->chan.
-      p->chan = 0;
-
-      // If this waiting process has gotten so far as to actually
-      // go to sleep, also set it back to RUNNING.
-      if (p->state == SLEEPING) {
-        p->state = RUNNABLE;
-      }
-    }
-    // release(&p->lock);
   }
 }

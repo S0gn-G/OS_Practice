@@ -17,7 +17,7 @@ void clockintr() {
   if (cpuid() == 0) {
     // acquire(&tickslock);
     ticks++;
-    wakeup(&ticks);
+    // wakeup(&ticks);
     // release(&tickslock);
   }
 
@@ -106,7 +106,7 @@ uint64 usertrap(void) {
 
     // an interrupt will change sepc, scause, and sstatus,
     // so enable only now that we're done with those registers.
-    // intr_on();
+    intr_on();
 
     syscall();
   } else if ((which_dev = devintr()) != 0) {

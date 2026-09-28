@@ -91,9 +91,9 @@ int consoleread(int user_dst, uint64 dst, int n) {
         // release(&cons.lock);
         return -1;
       }
-      sleep_prepare(&cons.r);
+      // sleep_prepare(&cons.r);
       // release(&cons.lock);
-      sleep();
+      // sleep();
       // acquire(&cons.lock);
     }
 
@@ -167,7 +167,7 @@ void consoleintr(int c) {
         // wake up consoleread() if a whole line (or end-of-file)
         // has arrived.
         cons.w = cons.e;
-        wakeup(&cons.r);
+        // wakeup(&cons.r);
       }
     }
     break;
