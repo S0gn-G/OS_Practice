@@ -124,7 +124,7 @@ uint64 usertrap(void) {
     // kexit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2)
+  if (which_dev == 2 && ticks % LAB2_TICK == 0)
     yield();
 
   prepare_return();
@@ -191,7 +191,7 @@ void kerneltrap() {
   }
 
   // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2 && myproc() != 0)
+  if (which_dev == 2 && myproc() != 0 && ticks % LAB2_TICK == 0)
     yield();
 
   // the yield() may have caused some traps to occur,

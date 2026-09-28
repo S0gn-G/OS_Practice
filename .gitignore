@@ -1,4 +1,5 @@
 *.o
+*.img
 kernel/kernel
 kernel/userimg.S
 user/usys.S
