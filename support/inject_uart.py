@@ -58,10 +58,10 @@ def main():
 
     def wait_prompt(timeout=10):
         t0 = time.time()
-        while "$ " not in buf and time.time() - t0 < timeout:
+        while "sh> " not in buf and time.time() - t0 < timeout:
             drain()
             time.sleep(0.1)
-        return "$ " in buf
+        return "sh> " in buf
 
     ok = wait_prompt()
     print(f"boot {'ok' if ok else 'TIMEOUT'}")
