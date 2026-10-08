@@ -27,7 +27,7 @@ void forkret(void) {
 
   if (first) {
     first = 0;
-    
+
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
@@ -228,6 +228,27 @@ void userinit(void) {
   p->state = RUNNABLE;
 
   // release(&p->lock);
+}
+
+// Grow or shrink user memory by n bytes.
+// Return 0 on success, -1 on failure.
+int growproc(int n) {
+  uint64 sz;
+  struct proc *p = myproc();
+
+  sz = p->sz;
+  if (n > 0) {
+    if (sz + n > TRAPFRAME) {
+      return -1;
+    }
+    if ((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
+      return -1;
+    }
+  } else if (n < 0) {
+    sz = uvmdealloc(p->pagetable, sz, sz + n);
+  }
+  p->sz = sz;
+  return 0;
 }
 
 // Create a new process, copying the parent.
@@ -466,6 +487,13 @@ void yield(void) {
   // acquire(&p->lock);
   p->state = RUNNABLE;
   sched();
+  // release(&p->lock);
+}
+
+void setkilled(struct proc* p)
+{
+  // acquire(&p->lock);
+  p->killed = 1;
   // release(&p->lock);
 }
 

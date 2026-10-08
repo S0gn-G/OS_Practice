@@ -97,8 +97,8 @@ uint64 usertrap(void) {
   if (r_scause() == 8) {
     // system call
 
-    // if (killed(p))
-      // kexit(-1);
+    if (killed(p))
+      kexit(-1);
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
@@ -117,11 +117,11 @@ uint64 usertrap(void) {
   } else {
     printk("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printk("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
-    // setkilled(p);
+    setkilled(p);
   }
 
-  // if (killed(p))
-    // kexit(-1);
+  if (killed(p))
+    kexit(-1);
 
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && ticks % LAB2_TICK == 0)
