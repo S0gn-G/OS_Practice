@@ -90,11 +90,44 @@ uint64 walkaddr(pagetable_t pagetable, uint64 va) {
   return pa;
 }
 
+// 该页表页是否 512 项全空(即不再承载任何映射)。
+static int table_empty(pagetable_t pagetable) {
+  for (int i = 0; i < 512; i++)
+    if (pagetable[i] != 0)
+      return 0;
+  return 1;
+}
+
+// 自底向上回收 va 路径上"变空"的中间级页表页; level 为当前表项所在层级(2=根表)。
+// 先递归更深一层, 再判断子表是否全空; 回收前必须先清父项, 否则 freewalk/walk
+// 之后可能再摸到已释放的页。level-0 表里放的是叶子 PTE, 不再下钻。
+static void prune_empty(pagetable_t pagetable, uint64 va, int level) {
+  if (level == 0)
+    return;
+  pte_t* pte = &pagetable[PX(level, va)];
+  if ((*pte & PTE_V) == 0 || (*pte & (PTE_R | PTE_W | PTE_X)) != 0)
+    return; // 路径不存在, 或已是叶子(异常情况), 都不动
+  pagetable_t child = (pagetable_t)PTE2PA(*pte);
+  prune_empty(child, va, level - 1);
+  if (table_empty(child)) {
+    *pte = 0; // 先清父项, 再归还子表页: 任何时刻都不会有指向空闲页的页表项
+    kfree(child);
+  }
+}
+
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa.
 // va and size MUST be page-aligned.
-// Returns 0 on success, -1 if walk() couldn't
-// allocate a needed page-table page.
+// Returns 0 on success, -1 if a page-table page couldn't be allocated.
+//
+// 失败回滚不变式(lab3 阶段二核心):
+//   * 本次调用写入的 PTE 全部清除, 本次申请及因此变空的中间级页表页全部回收,
+//     页表恢复到调用前的可观测状态: 区间内无有效映射, 空闲页数与调用前相同;
+//   * 调用方传入的物理页 pa 归调用方所有 —— 本函数在成功与失败路径下都不释放它
+//     (uvmalloc/uvmcopy/vmfault 各自在失败分支 kfree 自己的页, 边界不重叠);
+//   * 对已有有效映射的 VA 重复映射视为内核 bug, 保持 panic(设计决策);
+//   * 本函数不做 TLB 刷新: 改未生效的页表不需要刷, 改生效页表由 satp 切换处的
+//     sfence.vma 兜底(见设计笔记"TLB 刷新时机")。
 int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm) {
   uint64 a, last;
   pte_t* pte;
@@ -108,11 +141,16 @@ int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   if (size == 0)
     panic("mappages: size");
 
+  // 区间地址运算越界: 不是"重复映射"那类内核契约违反, 返回错误即可
+  // (同时保证下面绝不会把 va >= MAXVA 递给会 panic 的 walk)。
+  if (va + size < va || va + size > MAXVA)
+    return -1;
+
   a = va;
   last = va + size - PGSIZE;
   for (;;) {
     if ((pte = walk(pagetable, a, 1)) == 0)
-      return -1;
+      goto rollback;
     if (*pte & PTE_V)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
@@ -122,6 +160,25 @@ int mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     pa += PGSIZE;
   }
   return 0;
+
+rollback:
+  // 1) 清掉本次已写入的 PTE(不含失败页 a), 不释放调用方的物理页。
+  for (uint64 j = va; j < a; j += PGSIZE) {
+    pte_t* p = walk(pagetable, j, 0);
+    if (p != 0 && (*p & PTE_V))
+      *p = 0;
+  }
+  // 2) 回收变空的页表页: 走本次触及的每一页(含失败页, 它可能已建好上一级表)。
+  //    同一个 level-0 表覆盖 512 页, 按 (PX2,PX1) 去重, 每张表只处理一次。
+  uint64 lastkey = (uint64)-1;
+  for (uint64 j = va; j <= a; j += PGSIZE) {
+    uint64 key = (PX(2, j) << 9) | PX(1, j);
+    if (key != lastkey) {
+      prune_empty(pagetable, j, 2);
+      lastkey = key;
+    }
+  }
+  return -1;
 }
 
 // Return the address of the PTE in page table pagetable
