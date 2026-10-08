@@ -19,6 +19,9 @@ int             kexec(char*, char**);
 void*           kalloc(void);
 void            kfree(void*);
 void            kinit(void);
+uint64          kalloc_nfree(void);
+uint64          kalloc_total(void);
+uint64          kalloc_usable(void);
 
 // plic.c
 void            plicinit(void);
