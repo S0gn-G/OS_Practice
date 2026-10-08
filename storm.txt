@@ -1,0 +1,4 @@
+SEND hello
+SENDRAW abc
+WAIT 200
+REPEAT 10 x

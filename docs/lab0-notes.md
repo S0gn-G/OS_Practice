@@ -30,27 +30,35 @@ sequenceDiagram
     SH->>SH: gets() 逐字节 read(0,&c,1) 收满一行，buf="hi\n"
     Note over SH: ② 解析与派生（U 态 · 用户栈）
     SH->>K: fork()  [S 态 · sh 内核栈]
-    K->>K: sys_fork→kfork→allocproc：新进程 P2，复制 trapframe/映像，a0=0
-    K->>SH: sret 回 U 态：父进程 a0=pid(2)
+    K->>K: sys_fork→kfork→allocproc：新建 P2（自己的内核栈/trapframe/页表），uvmcopy 复制映像
+    K->>K: *(p2->trapframe) = *(sh->trapframe)（连 sepc 一起），然后 p2->trapframe->a0 = 0
+    K->>K: P2->context.ra = forkret，P2->state = RUNNABLE
+    K->>SH: sret 回 U 态：sh 的 a0 = 子进程 pid(2)
     SH->>K: wait(0)  [S 态 · sh 内核栈：kwait 忙等子进程]
-    Note over K: ③ 调度（S 态 · 调度栈）
-    K->>K: scheduler() 选中 RUNNABLE 的 P2 → swtch(&c->context,&p2->context)
-    Note over K: P2 内核栈：forkret()
-    K->>K: kexec("hi",0)：查 _uprog_table、建页表、映像→虚址0、栈顶 p->sz、trapframe.epc=0
-    K->>K: prepare_return：stvec←uservec、填 kernel_*、SPP=0/SPIE=1、sepc←epc
-    Note over K: ④ 执行 hi（U 态 · P2 用户栈）
-    K->>SH: userret + sret：satp←用户页表、恢复寄存器、PC=0
+    Note over K: ③ 调度（S 态 · 调度栈）：时钟中断让 sh 让出，scheduler() 选中 RUNNABLE 的 P2
+    K->>K: swtch(&c->context, &p2->context) → P2 内核栈
+    K->>K: P2 从 forkret 首次进入内核：static first 已为 0，**不再执行 kexec("sh",0)**
+    K->>SH: prepare_return + userret：satp←P2 页表，sret 回 U 态
+    Note over SH: ④ P2 从父进程 fork() 的返回点继续（U 态 · P2 用户栈）
+    SH->>SH: 既然是 fork 返回，a0=0 → 走 sh.c 的 pid==0 分支：argv={buf,0}
+    SH->>K: exec("hi", argv)  [S 态 · P2 内核栈]
+    K->>K: sys_exec→copyinstr 取名字→kexec("hi",0)：查表、建**新**页表、映像→虚址0、栈顶 totalsz、trapframe.epc=0
+    K->>K: prepare_return：stvec←uservec、填 kernel_*、SPP=0/SPIE=1、sepc←epc(0)
+    Note over K: ⑤ 执行 hi（U 态 · P2 用户栈）
+    K->>SH: userret + sret：satp←P2 新页表、恢复寄存器、PC=0
     SH->>K: 主函数 printf → write(1,"hi: …",n)  [S 态 · P2 内核栈]
     K->>K: syscall→sys_write→consolewrite→copyin→uartwrite
     K->>HW: 轮询 LSR.TX_IDLE 后写 THR
     HW->>U: 屏幕显示 hi: user program running, pid=2
     SH->>K: exit(0)  [S 态 · P2 内核栈]
     K->>K: sys_exit→kexit：state=ZOMBIE→sched()
-    Note over K: ⑤ 回到调度器并唤醒父进程（S 态 · 调度栈）
+    Note over K: ⑥ 回到调度器并回收子进程（S 态 · 调度栈）
     K->>K: scheduler() 选回 sh → swtch → kwait 发现 ZOMBIE 子进程
-    K->>K: freeproc(子进程)，wait 返回 pid
+    K->>K: copyout xstate、freeproc(子进程)，wait 返回 pid
     K->>SH: sret 回 U 态，打印 "sh> " 等下一行命令
 ```
+
+> **容易画错的一点（本图已按代码修正）**：`forkret` 不是"fork 子进程的入口"，而是**所有被调度进程第一次被 `swtch` 选中时的统一落点**（`allocproc` 把 `p->context.ra` 设成它）。其中装载 `sh` 的 `kexec("sh", 0)` 被 `static int first` 守着，**只有系统里的第一个进程会执行**；`fork` 出来的子进程进来时 `first` 已是 0，于是只做 `prepare_return()`，从**父进程 `fork()` 的返回点**以 `a0=0` 回到用户态，再由 `sh.c` 的 `pid == 0` 分支发起 `exec("hi", argv)`。图 1 里 P2 的"装载"因此发生在 **exec 系统调用**里，而不是 `forkret` 里。
 
 ### 1.2 逐节点明细（栈 / 特权级 / 代码位置 / 寄存器）
 
@@ -62,17 +70,20 @@ sequenceDiagram
 | 4 | 系统调用读一行 | sh 内核栈 | S | `gets()` 循环 `read(0,&c,1)`：`ecall`→`uservec`(换栈/换页表)→`usertrap`→`syscall`→`sys_read`→`consoleread` 取字节→`copyout` |
 | 5 | 用户态解析 | **用户栈** | U | `sret` 回 U 态；`buf="hi\n"`（`gets` 保留行尾 `\n`，由内核 `nameeq()` 吃掉尾部空白后再比名字） |
 | 6 | `fork` | sh 内核栈 | S | `ecall`→`usertrap`→`sys_fork`→`kfork`：`allocproc`(新内核栈+trapframe+页表)、`uvmcopy` 复制映像、`*(np->trapframe)=*(p->trapframe)`、`np->trapframe->a0=0`、state=RUNNABLE |
-| 7 | 父进程等待 | sh 内核栈 | S | 父进程 `a0=pid`，进入 `wait(0)`→`kwait` 忙等（**不让出 CPU**，见 §3 局限说明） |
+| 7 | 父进程等待 | sh 内核栈 | S | 父进程 `a0=pid`，进入 `wait(0)`→`kwait`：**忙等且不让出 CPU**；所以让 P2 真正上 CPU 的动作发生在下一次时钟中断 yield 时（见 **图 2**），而不是这次 `fork` 里 |
 | 8 | 调度决策 | **调度栈 (stack0)** | S | 时钟中断（见 **图 2**）触发 `yield`：sh 置 RUNNABLE、`swtch` 进 `scheduler()`；此时 P2 早已是 RUNNABLE（`kfork` 里置的），`scheduler` 线性扫描选中它 → `p->state=RUNNING`、`c->proc=p` → `swtch(&c->context,&p2->context)` |
-| 9 | 子进程首次进入内核 | **P2 内核栈** | S | P2 的 `context.ra` 在 `allocproc` 里已指向 `forkret`；`forkret()`：`kexec("hi",0)` 按名查表、建页表、映像拷到虚址 0、算用户栈顶 `totalsz`（即 `p->sz`）、`memset(trapframe)`、`epc=0`、`sp=totalsz` |
-| 10 | 伪造返回现场 | P2 内核栈 | S | `prepare_return()`：`stvec←uservec`、填 `kernel_satp/sp/trap/hartid`、`sstatus.SPP=0`、`SPIE=1`、`sepc=0` |
-| 11 | 降级进用户态 | P2 内核栈→用户栈 | S→U | 调 `userret(satp)`：换 satp、flush TLB、恢复 31 个寄存器、`sret`（PC=0，U 态） |
-| 12 | 运行 `hi` 主体 | **P2 用户栈** | U | `printf` → `putc` → `write(1,...,n)`（a7=SYS_write=16，`ecall`） |
-| 13 | 系统调用输出 | P2 内核栈 | S | `usertrap`→`syscall`→`sys_write`(fd=1) → `consolewrite` → `copyin` 到内核 `buf[32]` → `uartwrite` 轮询 `LSR.TX_IDLE` 写 `THR` |
-| 14 | 屏幕显示 | — | — | UART 移位输出 → **`hi: user program running, pid=2`** |
-| 15 | `exit` | P2 内核栈 | S | `ecall`→`sys_exit`→`kexit(0)`：`state=ZOMBIE`、`xstate=0`、`sched()` 永不返回（`panic("zombie exit")` 是护栏） |
-| 16 | 回收子进程 | 调度栈→sh 内核栈 | S | `scheduler()` 选回 sh（RUNNABLE）→ `swtch` 回到 `kwait` 循环 → 扫到 ZOMBIE → `copyout` xstate、`freeproc` → 返回 pid |
-| 17 | 打印提示符 | 用户栈 | U | `wait` 返回值经 `trapframe->a0` 回到 U 态，循环回 `printf("sh> ")`（prompt 本身也走一次 `write`） |
+| 9 | 子进程首次被调度 | **P2 内核栈** | S | `allocproc` 已把 P2 的 `context.ra` 设为 `forkret`；`swtch` 后从 `forkret()` 开始。`static int first` 此时已是 0（首个进程早已执行过并清零），**所以这里不装载 `sh`**，只做 `prepare_return()` |
+| 10 | 返回用户态 | P2 内核栈→P2 用户栈 | S→U | `forkret` 直接调 `userret(satp=P2 页表)`：换 satp、flush TLB、恢复 31 个寄存器、`sret`。**PC = 父进程 `fork()` 的返回点**（`kfork` 里整结构复制 trapframe，`sepc` 未动），且 `a0=0` |
+| 11 | 走 `sh.c` 的子分支 | P2 用户栈 | U | `if (pid == 0)` 成立：`argv = { buf, 0 }` → `exec("hi", argv)`（`ecall`，a7=SYS_exec=7） |
+| 12 | 装载 `hi`（真正发生在这里） | P2 内核栈 | S | `usertrap`→`syscall`→`sys_exec`→`copyinstr` 取名字→`kexec("hi",0)`：查 `_uprog_table`、建**新**页表、映像拷到虚址 0、`totalsz` 之上做用户栈、`memset(trapframe)`、`epc=0`、`sp=totalsz`、`p->sz=totalsz` |
+| 13 | 伪造返回现场 | P2 内核栈 | S | `prepare_return()`：`stvec←uservec`、填 `kernel_satp/sp/trap/hartid`、`sstatus.SPP=0`、`SPIE=1`、`sepc←epc=0` |
+| 14 | 降级进用户态 | P2 内核栈→用户栈 | S→U | `userret(satp=P2 新页表)` → `sret`（PC=0，U 态，跳进 `hi` 的 `main`） |
+| 15 | 运行 `hi` 主体 | **P2 用户栈** | U | `printf` → `putc` → `write(1,...,n)`（a7=SYS_write=16，`ecall`） |
+| 16 | 系统调用输出 | P2 内核栈 | S | `usertrap`→`syscall`→`sys_write`(fd=1) → `consolewrite` → `copyin` 到内核 `buf[32]` → `uartwrite` 轮询 `LSR.TX_IDLE` 写 `THR` |
+| 17 | 屏幕显示 | — | — | UART 移位输出 → **`hi: user program running, pid=2`** |
+| 18 | `exit` | P2 内核栈 | S | `ecall`→`sys_exit`→`kexit(0)`：`state=ZOMBIE`、`xstate=0`、`sched()` 永不返回（`panic("zombie exit")` 是护栏） |
+| 19 | 回收子进程 | 调度栈→sh 内核栈 | S | `scheduler()` 选回 sh（RUNNABLE）→ `swtch` 回到 `kwait` 循环 → 扫到 ZOMBIE → `copyout` xstate、`freeproc` → 返回 pid |
+| 20 | 打印提示符 | 用户栈 | U | `wait` 返回值经 `trapframe->a0` 回到 U 态，循环回 `printf("sh> ")`（prompt 本身也走一次 `write`） |
 
 ### 1.3 上下文切换与栈的迁移（tab 对齐）
 
@@ -88,12 +99,15 @@ T3 时钟中断→yield    │                   │        │      ↓ swtch (
                     │                   │        │ 调度栈 ▓▓▓▓▓ (stack0)   │
                     │                   │        │   scheduler() 挑进程    │
                     │                   │        │      ↓ swtch           │
-T4 选中 P2          │                   │        │ P2 内核栈 ▓▓ (forkret)  │
-T5 kexec 完毕        │ P2 用户栈 ▓▓▓▓     │  ◀───  │      ↑ userret/sret    │
-T6 hi 调 write      │                   │  ───▶  │ P2 内核栈 ▓▓ (sys_write)│
-T7 exit → ZOMBIE    │                   │        │ 调度栈 ▓▓ → sh 内核栈    │
-T8 sh 继续循环       │ 用户栈 ▓▓▓▓▓      │  ◀───  │      ↑ userret/sret    │
-                    └───────────────────┘        └────────────────────────┘
+T4 选中 P2          │                   │        │ P2 内核栈 ▓ (forkret：     │
+                    │                   │        │   first=0，不装载 sh)    │
+                    │                   │        │      ↑ userret/sret      │
+T5 P2 回到 fork 返回点│ P2 用户栈 ▓▓▓▓    │  ◀───  │  （a0=0 → 子分支）       │
+T6 P2 调 exec("hi")  │                   │  ───▶  │ P2 内核栈 ▓ (kexec 装载) │
+T7 执行 hi / write   │ P2 用户栈 ▓▓▓     │  ───▶  │ P2 内核栈 ▓ (sys_write)  │
+T8 exit → ZOMBIE    │                   │        │ 调度栈 ▓▓ → sh 内核栈    │
+T9 sh 继续循环       │ sh 用户栈 ▓▓▓     │  ◀───  │      ↑ userret/sret      │
+                    └───────────────────┘        └──────────────────────────┘
      「用户寄存器只活在 trapframe 里」            「swtch 只搬 ra/sp/s0..s11」
 ```
 

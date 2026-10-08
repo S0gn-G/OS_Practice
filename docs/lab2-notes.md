@@ -176,6 +176,8 @@ sequenceDiagram
 **5. 没有进程抽象时怎么跑起第一个用户程序？**
 `util` 侧取最简方案：`main()` 里 `procinit()` → `userinit()` 造一个 `RUNNABLE` 进程，`scheduler()` 选中它 → `swtch` 到 `forkret()` → `forkret` 里 `kexec("sh", 0)` 装载并伪造第一现场 → 直接 `prepare_return()` + 调 `userret` 降级进 U 态。**不做真正的 fork**，所以没有"init 进程"这一层。
 
+> ⚠️ **`forkret` 的双重身份**（画控制流图时最容易错的一点）：`allocproc` 把**每个**进程的 `context.ra` 都设成 `forkret`，所以"任何进程第一次被调度"都从这里进入；但其中装载 `sh` 的 `kexec("sh",0)` 被 `static int first` 守着，**只有系统里第一个进程会执行**。此后 `kfork` 出来的子进程进 `forkret` 时 `first` 已是 0，只做 `prepare_return()`，随后从**父进程 `fork()` 的返回点**以 `a0=0` 回到用户态——子进程的装载发生在它自己发起的 `exec` 系统调用里（`sh.c` 的 `pid == 0` 分支），而不是在 `forkret` 里。
+
 **6. 程序加载基址与用户栈（`kexec`）？**
 现在已开启 Sv39，所以不存在"踩内核镜像"的问题：程序按 `user.ld` 从**虚址 0** 链接，`kexec` 把 `[0, PGROUNDUP(imgsz))` 分配并映射到**任意物理页**，带 `PTE_R|PTE_X|PTE_U`（+`PTE_W` 供 bss/数据写）。映像后紧跟 1 页 guard（`uvmclear` 清掉 `PTE_U`，越界访问立即变成 cause=15/13 而不是静默踩栈），再上面是 `USERSTACK=1` 页用户栈，`sp = totalsz` 页对齐、自然满足 RISC-V 的 16 字节栈对齐。`trapframe->epc = 0` 即程序入口。
 

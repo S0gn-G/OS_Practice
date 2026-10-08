@@ -1,3 +1,24 @@
 OSLAB1 sid=2024302111292 mod97=0x52
 [chk=2290]
+sh> hello
+exec hello
+ failed
+sh> abcx
+x
+x
+x
+x
+exec abcx
+ failed
+sh> x
+x
+x
+x
+x
+exec x
+ failed
+sh> exec x
+ failed
+sh> exec x
+ failed
 sh> 
