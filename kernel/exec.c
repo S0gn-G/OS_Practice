@@ -1,5 +1,6 @@
 #include "types.h"
 #include "param.h"
+#include "course_sid.h"
 #include "riscv.h"
 #include "proc.h"
 #include "defs.h"
@@ -27,9 +28,20 @@
 //
 // 所以"下一项" = align8(本项 end)，不能按"16 + strlen(name) + 1"去推。
 //
+//
+// 内嵌程序表表项(lab3 起扩展两个字段):
+//   start/end  —— .bin 在内核里的地址范围
+//   data_off   —— 可写段(数据段)起始的虚址偏移, 由 Makefile 生成的派生链接脚本
+//                 在 .data 前插入页对齐保证; [0, data_off) 即代码段+只读数据段
+//   img_end    —— ELF 映像末尾偏移(含 .bss; 取自 user.ld 的 end 符号, 因为
+//                 平铺 .bin 不包含 .bss 的内容, 只靠文件长度无法覆盖 .bss)
+// 注意: "下一项"仍 = align8(本项 end), 与表头有几个字段无关。
+//
 struct uprog {
   uint64 start;
   uint64 end;
+  uint64 data_off;
+  uint64 img_end;
   char name[];
 };
 
@@ -62,16 +74,17 @@ static int nameeq(const char* tbl, const char* want) {
 //
 // 用户地址空间布局(与 user.ld 的 trampoline ABI 一致，程序从 0 链接):
 //
-//   [0, sz)               程序映像，必须带 PTE_X
-//   [sz, sz+PGSIZE)       guard 页(清掉 PTE_U)
-//   [sz+PGSIZE, totalsz)  用户栈(USERSTACK 页)，sp 落在这里的顶端
-//   TRAPFRAME/TRAMPOLINE  由 proc_pagetable() 布置在最高虚址
+//   [0, data_off)              代码段 + 只读数据段 R+X(严禁 W)
+//   [data_off, sz)             数据段 + .bss       R+W
+//   [sz, sz+G*PGSIZE)          guard 页(G = LAB3_GUARD_PAGES, 哑映射: 清 PTE_U)
+//   [sz+G*PGSIZE, totalsz)     用户栈(USERSTACK 页)，sp 落在这里的顶端
+//   TRAPFRAME/TRAMPOLINE       由 proc_pagetable() 布置在最高虚址
 //
 int kexec(char* path, char** argv) {
   struct uprog* u;
   struct proc* p = myproc();
   pagetable_t pagetable, oldpagetable;
-  uint64 imgsz, sz, totalsz, sp, off, oldsz;
+  uint64 filesz, memsz, data_off, sz, totalsz, sp, off, oldsz;
 
   // lab2 阶段一律忽略 argv: exec 会把整个地址空间换掉，argv 字符串本来
   // 就躺在被换掉的旧映像里(xv6 的做法是先把它压到新栈上)；内嵌程序
@@ -89,27 +102,38 @@ int kexec(char* path, char** argv) {
   if ((pagetable = proc_pagetable(p)) == 0)
     return -1;
 
-  imgsz = u->end - u->start;
-  sz = PGROUNDUP(imgsz); // 映像占 [0, sz)
+  filesz = u->end - u->start;                          // .bin 实际字节数
+  memsz = (u->img_end > filesz) ? u->img_end : filesz; // 含 .bss 的映像大小
+  data_off = u->data_off;
+  sz = PGROUNDUP(memsz); // 映像占 [0, sz)
 
-  // 1) 映像页。uvmalloc 自带 PTE_R|PTE_U，PTE_X 必须自己传，
-  //    否则进程回到 U 态取第一条指令就是 instruction page fault。
-  if (uvmalloc(pagetable, 0, sz, PTE_X | PTE_W) == 0)
-    goto bad;
+  // 1) 映像按段权限映射: 代码段(含只读数据) R+X —— 严禁写权限(承 badaccess
+  //    TEST-3a), 数据段(含 .bss) R+W。uvmalloc 自带 PTE_R|PTE_U, 权限位随
+  //    xperm 传入, 所以这里 PTE_X 与 PTE_W 分两次调用。
+  if (data_off == 0 || data_off > sz) {
+    // 段边界元数据缺失(理论上不会发生): 退化为整段 R+W+X, 保证系统仍可用
+    if (uvmalloc(pagetable, 0, sz, PTE_X | PTE_W) == 0)
+      goto bad;
+  } else {
+    if (uvmalloc(pagetable, 0, data_off, PTE_X) == 0)
+      goto bad;
+    if (sz > data_off && uvmalloc(pagetable, data_off, sz, PTE_W) == 0)
+      goto bad;
+  }
 
-  // 平铺二进制没有段信息，逐页整块搬过去。
-  // kalloc() 给的是 0x05 脏页，必须把映像覆盖满。
-  for (off = 0; off < imgsz; off += PGSIZE) {
-    uint64 n = (imgsz - off < PGSIZE) ? (imgsz - off) : PGSIZE;
+  // 逐页搬 .bin 的内容; 文件未覆盖的尾部(.bss)保持 kalloc 的零页即可。
+  for (off = 0; off < filesz; off += PGSIZE) {
+    uint64 n = (filesz - off < PGSIZE) ? (filesz - off) : PGSIZE;
     memmove((char*)walkaddr(pagetable, off), (char*)u->start + off, n);
   }
 
-  // 2) 映像之后: 1 页 guard + USERSTACK 页用户栈。
-  totalsz = sz + (USERSTACK + 1) * PGSIZE;
+  // 2) 映像之后: LAB3_GUARD_PAGES 页 guard + USERSTACK 页用户栈。
+  totalsz = sz + (LAB3_GUARD_PAGES + USERSTACK) * PGSIZE;
   if (uvmalloc(pagetable, sz, totalsz, PTE_W) == 0)
     goto bad;
-  uvmclear(pagetable, sz); // guard 页对 U 态不可见
-  sp = totalsz;            // 页对齐，自然满足 RISC-V 的 16 字节栈对齐
+  for (int i = 0; i < LAB3_GUARD_PAGES; i++)
+    uvmclear(pagetable, sz + (uint64)i * PGSIZE); // guard 页对 U 态不可见
+  sp = totalsz;                                   // 页对齐，自然满足 16 字节栈对齐
 
   // 3) 伪造第一现场。trapframe 是 kalloc 拿来的脏页，先整块清零。
   //    kernel_satp/kernel_sp/kernel_trap/kernel_hartid 四个头部字段由

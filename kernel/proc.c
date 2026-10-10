@@ -41,6 +41,10 @@ void forkret(void) {
     if (p->trapframe->a0 == -1) {
       panic("exec");
     }
+
+    // lab3 页表观测: 首个用户进程地址空间装配完成、返回用户态之前, 打印一次
+    // 页表 dump(格式见 docs/dump_pagetable-ABI.md); 现场用 `make dump` 重放。
+    dump_pagetable(p->pagetable);
   }
 
   // return to user space, mimicing usertrap()'s return.

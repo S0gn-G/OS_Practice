@@ -88,6 +88,7 @@ void            uartwrite(char [], int);
 int             copyin(pagetable_t, uint64, char*, uint64, uint64);
 int             copyinstr(pagetable_t, uint64, char*, uint64, uint64);
 int             copyout(pagetable_t, uint64, uint64, char*, uint64);
+void            dump_pagetable(pagetable_t);
 int             ismapped(pagetable_t, uint64);
 void            kvminit(void);
 void            kvminithart(void);

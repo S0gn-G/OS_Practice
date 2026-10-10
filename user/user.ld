@@ -1,23 +1,39 @@
-/* 预置支撑代码（请勿修改） —— 用户程序链接脚本(lab2 起)
- * 用户程序从地址 0 链接(trampoline ABI:用户地址空间从 0 起,
- * TRAPFRAME 页在顶端,由内核布置——那是你的设计空间)。
- * 注意:lab3 开启 SV39 后本脚本不变;你的内核负责把 0 开始的
- * 虚拟地址映射到程序所在的物理页。
- */
-OUTPUT_ARCH(riscv)
-ENTRY(main)
+OUTPUT_ARCH( "riscv" )
 
 SECTIONS
 {
-  . = 0x0;
-
-  .text : { *(.text .text.*) }
-  .rodata : { *(.rodata .rodata.*) }
-  .data : { *(.data .data.*) }
-  .bss : {
-    *(.bss .bss.*)
-    *(.sbss*)
+ . = 0x0;
+ 
+  .text : {
+    *(.text .text.*)
   }
 
-  end = .;
+  .rodata : {
+    . = ALIGN(16);
+    *(.srodata .srodata.*) /* do not need to distinguish this from .rodata */
+    . = ALIGN(16);
+    *(.rodata .rodata.*)
+  }
+
+  .eh_frame : {
+       *(.eh_frame)
+       *(.eh_frame.*)
+   }
+
+  . = ALIGN(0x1000);
+  .data : {
+    . = ALIGN(16);
+    *(.sdata .sdata.*) /* do not need to distinguish this from .data */
+    . = ALIGN(16);
+    *(.data .data.*)
+  }
+
+  .bss : {
+    . = ALIGN(16);
+    *(.sbss .sbss.*) /* do not need to distinguish this from .bss */
+    . = ALIGN(16);
+    *(.bss .bss.*)
+  }
+
+  PROVIDE(end = .);
 }

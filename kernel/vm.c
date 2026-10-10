@@ -499,3 +499,36 @@ int ismapped(pagetable_t pagetable, uint64 va) {
   }
   return 0;
 }
+
+// ---- 页表观测(lab3): 输出格式严格遵循 docs/dump_pagetable-ABI.md ----
+//
+// 递归打印一张页表: 非叶表项打 L2/L1 行(perm 四位全 '-'), 叶子表项打 LEAF 行,
+// perm 按 R/W/X/U 顺序、未置位用 '-' 占位; A/D 位属硬件运行时状态, 不输出。
+// va 取该表项所管辖虚拟区间的起始地址(按索引逐级 OR 出来), 天然升序。
+static void dumpsub(pagetable_t pagetable, uint64 va, int level) {
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if ((pte & PTE_V) == 0)
+      continue;
+    uint64 cva = va | ((uint64)i << PXSHIFT(level));
+    uint64 pa = PTE2PA(pte);
+
+    if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+      // 非叶: 指向下一级页表
+      if (level > 0) {
+        printk("L%d va=%p pa=%p perm=----\n", level, (void*)cva, (void*)pa);
+        dumpsub((pagetable_t)pa, cva, level - 1);
+      }
+    } else {
+      printk("LEAF va=%p pa=%p perm=%c%c%c%c\n", (void*)cva, (void*)pa,
+             (pte & PTE_R) ? 'r' : '-', (pte & PTE_W) ? 'w' : '-',
+             (pte & PTE_X) ? 'x' : '-', (pte & PTE_U) ? 'u' : '-');
+    }
+  }
+}
+
+void dump_pagetable(pagetable_t pagetable) {
+  printk("DUMP-PAGETABLE begin\n");
+  dumpsub(pagetable, 0, 2);
+  printk("DUMP-PAGETABLE end\n");
+}
